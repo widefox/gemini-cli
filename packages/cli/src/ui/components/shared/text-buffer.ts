@@ -689,8 +689,6 @@ function textBufferReducer(
             preferredCol: null,
           };
         }
-        // wordLeft and wordRight are complex and better handled by dispatching from the component
-        // This reducer logic is simplified. For full fidelity, it would need more context.
         default:
           break;
       }
@@ -1021,9 +1019,6 @@ function textBufferReducer(
       };
     }
 
-    // Other actions like DELETE_WORD_LEFT, REPLACE_RANGE etc. would be implemented here.
-    // For brevity, they are omitted but would follow a similar pattern of taking state,
-    // performing operations on copies, and returning a new state object.
     default:
       return state;
   }
