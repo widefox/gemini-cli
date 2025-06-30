@@ -634,6 +634,61 @@ function textBufferReducer(
           newPreferredCol = null;
           newVisualCol = currentVisLineLen;
           break;
+        case 'wordLeft': {
+          const { cursorRow, cursorCol, lines } = state;
+          if (cursorCol === 0 && cursorRow === 0) return state;
+
+          let newCursorRow = cursorRow;
+          let newCursorCol = cursorCol;
+
+          if (cursorCol === 0) {
+            newCursorRow--;
+            newCursorCol = cpLen(lines[newCursorRow] ?? '');
+          } else {
+            const lineContent = lines[cursorRow];
+            const arr = toCodePoints(lineContent);
+            let start = cursorCol;
+            while (start > 0 && !isWordChar(arr[start - 1])) start--;
+            while (start > 0 && isWordChar(arr[start - 1])) start--;
+            newCursorCol = start;
+          }
+          return {
+            ...state,
+            cursorRow: newCursorRow,
+            cursorCol: newCursorCol,
+            preferredCol: null,
+          };
+        }
+        case 'wordRight': {
+          const { cursorRow, cursorCol, lines } = state;
+          if (
+            cursorRow === lines.length - 1 &&
+            cursorCol === cpLen(lines[cursorRow] ?? '')
+          ) {
+            return state;
+          }
+
+          let newCursorRow = cursorRow;
+          let newCursorCol = cursorCol;
+          const lineContent = lines[cursorRow] ?? '';
+          const arr = toCodePoints(lineContent);
+
+          if (cursorCol >= arr.length) {
+            newCursorRow++;
+            newCursorCol = 0;
+          } else {
+            let end = cursorCol;
+            while (end < arr.length && !isWordChar(arr[end])) end++;
+            while (end < arr.length && isWordChar(arr[end])) end++;
+            newCursorCol = end;
+          }
+          return {
+            ...state,
+            cursorRow: newCursorRow,
+            cursorCol: newCursorCol,
+            preferredCol: null,
+          };
+        }
         // wordLeft and wordRight are complex and better handled by dispatching from the component
         // This reducer logic is simplified. For full fidelity, it would need more context.
         default:
@@ -1090,9 +1145,6 @@ export function useTextBuffer({
 
   const move = useCallback(
     (dir: Direction): void => {
-      // Complex moves like wordLeft/wordRight are not yet in reducer
-      // and would need more complex logic there.
-      // This is a simplified dispatch.
       dispatch({ type: 'MOVE', payload: { dir, visualLayout } });
     },
     [visualLayout],
@@ -1110,6 +1162,22 @@ export function useTextBuffer({
 
   const setText = useCallback((newText: string): void => {
     dispatch({ type: 'SET_TEXT', payload: newText });
+  }, []);
+
+  const deleteWordLeft = useCallback((): void => {
+    dispatch({ type: 'DELETE_WORD_LEFT' });
+  }, []);
+
+  const deleteWordRight = useCallback((): void => {
+    dispatch({ type: 'DELETE_WORD_RIGHT' });
+  }, []);
+
+  const killLineRight = useCallback((): void => {
+    dispatch({ type: 'KILL_LINE_RIGHT' });
+  }, []);
+
+  const killLineLeft = useCallback((): void => {
+    dispatch({ type: 'KILL_LINE_LEFT' });
   }, []);
 
   const openInExternalEditor = useCallback(
@@ -1167,40 +1235,88 @@ export function useTextBuffer({
       sequence: string;
     }): boolean => {
       const { sequence: input } = key;
+      dbg('handleInput', {
+        key,
+        cursor: [cursorRow, cursorCol],
+        visualCursor,
+      });
       const beforeText = text;
-      const beforeCursor = [cursorRow, cursorCol];
+      const beforeLogicalCursor = [cursorRow, cursorCol];
+      const beforeVisualCursor = [...visualCursor];
 
       if (key.name === 'escape') return false;
 
-      if (key.name === 'return' || input === '\r' || input === '\n') {
+      if (
+        key.name === 'return' ||
+        input === '\r' ||
+        input === '\n' ||
+        input === '\\\r' // VSCode terminal represents shift + enter this way
+      )
         newline();
-      } else if (key.name === 'left' && !key.meta && !key.ctrl) {
-        move('left');
-      } else if (key.name === 'right' && !key.meta && !key.ctrl) {
-        move('right');
-      } else if (key.name === 'up') {
-        move('up');
-      } else if (key.name === 'down') {
-        move('down');
-      } else if (key.name === 'home') {
-        move('home');
-      } else if (key.name === 'end') {
-        move('end');
-      } else if (key.name === 'backspace' || input === '\x7f') {
+      else if (key.name === 'left' && !key.meta && !key.ctrl) move('left');
+      else if (key.ctrl && key.name === 'b') move('left');
+      else if (key.name === 'right' && !key.meta && !key.ctrl) move('right');
+      else if (key.ctrl && key.name === 'f') move('right');
+      else if (key.name === 'up') move('up');
+      else if (key.name === 'down') move('down');
+      else if ((key.ctrl || key.meta) && key.name === 'left') move('wordLeft');
+      else if (key.meta && key.name === 'b') move('wordLeft');
+      else if ((key.ctrl || key.meta) && key.name === 'right')
+        move('wordRight');
+      else if (key.meta && key.name === 'f') move('wordRight');
+      else if (key.name === 'home') move('home');
+      else if (key.ctrl && key.name === 'a') move('home');
+      else if (key.name === 'end') move('end');
+      else if (key.ctrl && key.name === 'e') move('end');
+      else if (key.ctrl && key.name === 'w') deleteWordLeft();
+      else if (
+        (key.meta || key.ctrl) &&
+        (key.name === 'backspace' || input === '\x7f')
+      )
+        deleteWordLeft();
+      else if ((key.meta || key.ctrl) && key.name === 'delete')
+        deleteWordRight();
+      else if (
+        key.name === 'backspace' ||
+        input === '\x7f' ||
+        (key.ctrl && key.name === 'h')
+      )
         backspace();
-      } else if (key.name === 'delete' || (key.ctrl && key.name === 'd')) {
-        del();
-      } else if (input && !key.ctrl && !key.meta) {
+      else if (key.name === 'delete' || (key.ctrl && key.name === 'd')) del();
+      else if (input && !key.ctrl && !key.meta) {
         insert(input);
       }
 
       const textChanged = text !== beforeText;
+      // After operations, visualCursor might not be immediately updated if the change
+      // was to `lines`, `cursorRow`, or `cursorCol` which then triggers the useEffect.
+      // So, for return value, we check logical cursor change.
       const cursorChanged =
-        cursorRow !== beforeCursor[0] || cursorCol !== beforeCursor[1];
+        cursorRow !== beforeLogicalCursor[0] ||
+        cursorCol !== beforeLogicalCursor[1] ||
+        visualCursor[0] !== beforeVisualCursor[0] ||
+        visualCursor[1] !== beforeVisualCursor[1];
 
+      dbg('handleInput:after', {
+        cursor: [cursorRow, cursorCol],
+        visualCursor,
+        text,
+      });
       return textChanged || cursorChanged;
     },
-    [text, cursorRow, cursorCol, newline, move, backspace, del, insert],
+    [
+      text,
+      cursorRow,
+      cursorCol,
+      visualCursor,
+      newline,
+      move,
+      deleteWordLeft,
+      deleteWordRight,
+      backspace,
+      del,
+      insert,
+    ],
   );
 
   const renderedVisualLines = useMemo(
@@ -1256,24 +1372,6 @@ export function useTextBuffer({
     },
     [text],
   );
-
-  // The rest of the functions are not fully ported to the reducer in this example
-  // for brevity, but would follow the same pattern of dispatching actions.
-  const deleteWordLeft = useCallback((): void => {
-    dispatch({ type: 'DELETE_WORD_LEFT' });
-  }, []);
-
-  const deleteWordRight = useCallback((): void => {
-    dispatch({ type: 'DELETE_WORD_RIGHT' });
-  }, []);
-
-  const killLineRight = useCallback((): void => {
-    dispatch({ type: 'KILL_LINE_RIGHT' });
-  }, []);
-
-  const killLineLeft = useCallback((): void => {
-    dispatch({ type: 'KILL_LINE_LEFT' });
-  }, []);
 
   const returnValue: TextBuffer = {
     lines,
