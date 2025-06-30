@@ -470,8 +470,8 @@ export class CoreToolScheduler {
               onConfirm: (
                 outcome: ToolConfirmationOutcome,
                 payload?: {
-                  updatedParams: Record<string, unknown>;
-                  updatedDiff: string;
+                  updatedParams?: Record<string, unknown>;
+                  updatedDiff?: string;
                 },
               ) =>
                 this.handleConfirmationResponse(
@@ -511,15 +511,15 @@ export class CoreToolScheduler {
     originalOnConfirm: (
       outcome: ToolConfirmationOutcome,
       payload?: {
-        updatedParams: Record<string, unknown>;
-        updatedDiff: string;
+        updatedParams?: Record<string, unknown>;
+        updatedDiff?: string;
       },
     ) => Promise<void>,
     outcome: ToolConfirmationOutcome,
     signal: AbortSignal,
     payload?: {
-      updatedParams: Record<string, unknown>;
-      updatedDiff: string;
+      updatedParams?: Record<string, unknown>;
+      updatedDiff?: string;
     },
   ): Promise<void> {
     const toolCall = this.toolCalls.find(
@@ -580,11 +580,15 @@ export class CoreToolScheduler {
         waitingToolCall.confirmationDetails.type === 'edit' &&
         isModifiableTool(waitingToolCall.tool)
       ) {
-        this.setArgsInternal(callId, payload.updatedParams);
-        this.setStatusInternal(callId, 'awaiting_approval', {
-          ...waitingToolCall.confirmationDetails,
-          fileDiff: payload.updatedDiff,
-        });
+        if (payload.updatedParams) {
+          this.setArgsInternal(callId, payload.updatedParams);
+        }
+        if (payload.updatedDiff) {
+          this.setStatusInternal(callId, 'awaiting_approval', {
+            ...waitingToolCall.confirmationDetails,
+            fileDiff: payload.updatedDiff,
+          });
+        }
       }
       this.setStatusInternal(callId, 'scheduled');
     }

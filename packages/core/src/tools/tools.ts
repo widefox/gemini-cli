@@ -202,8 +202,8 @@ export interface ToolEditConfirmationDetails {
   onConfirm: (
     outcome: ToolConfirmationOutcome,
     payload?: {
-      updatedParams: Record<string, unknown>;
-      updatedDiff: string;
+      updatedParams?: Record<string, unknown>;
+      updatedDiff?: string;
     },
   ) => Promise<void>;
   fileName: string;
