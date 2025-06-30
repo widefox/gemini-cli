@@ -243,7 +243,7 @@ The CLI automatically loads environment variables from an `.env` file. The loadi
   - Your Google Cloud API key.
   - Required for using Vertex AI in express mode.
   - Ensure you have the necessary permissions.
-  - Example: `export GOOGLE_API_KEY="YOUR_GOOGLE_API_ KEY"`.
+  - Example: `export GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY"`.
 - **`GOOGLE_CLOUD_PROJECT`**:
   - Your Google Cloud Project ID.
   - Required for using Code Assist or Vertex AI.
