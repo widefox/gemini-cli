@@ -823,20 +823,43 @@ function textBufferReducer(
 
     case 'PASTE': {
       if (state.clipboard === null) return state;
-      // This can be implemented by dispatching APPLY_OPERATIONS
-      // For simplicity here, we'll just do a simple insert.
-      // A more robust solution would reuse the APPLY_OPERATIONS logic.
       const nextState = pushUndo(state);
       const { cursorRow, cursorCol } = nextState;
-      const lineContent = nextState.lines[cursorRow];
+      const lineContent = currentLine(cursorRow);
       const before = cpSlice(lineContent, 0, cursorCol);
       const after = cpSlice(lineContent, cursorCol);
       const newLines = [...nextState.lines];
-      newLines[cursorRow] = before + state.clipboard + after;
+
+      const pasteContent = stripUnsafeCharacters(
+        state.clipboard.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
+      );
+      const parts = pasteContent.split('\n');
+
+      let newCursorRow = cursorRow;
+      let newCursorCol = cursorCol;
+
+      if (parts.length > 1) {
+        newLines[newCursorRow] = before + parts[0];
+        const remainingParts = parts.slice(1);
+        const lastPartOriginal = remainingParts.pop() ?? '';
+        newLines.splice(newCursorRow + 1, 0, ...remainingParts);
+        newLines.splice(
+          newCursorRow + parts.length - 1,
+          0,
+          lastPartOriginal + after,
+        );
+        newCursorRow = newCursorRow + parts.length - 1;
+        newCursorCol = cpLen(lastPartOriginal);
+      } else {
+        newLines[newCursorRow] = before + parts[0] + after;
+        newCursorCol = cpLen(before) + cpLen(parts[0]);
+      }
+
       return {
         ...nextState,
         lines: newLines,
-        cursorCol: cursorCol + cpLen(state.clipboard),
+        cursorRow: newCursorRow,
+        cursorCol: newCursorCol,
         preferredCol: null,
       };
     }
@@ -872,11 +895,22 @@ function textBufferReducer(
       if (startRow === endRow) {
         newLines[startRow] = prefix + normalisedReplacement + suffix;
       } else {
-        newLines.splice(
-          startRow,
-          endRow - startRow + 1,
-          prefix + replacementParts[0] + suffix,
-        );
+        const firstLine = prefix + replacementParts[0];
+        if (replacementParts.length === 1) {
+          // Single line of replacement text, but spanning multiple original lines
+          newLines.splice(startRow, endRow - startRow + 1, firstLine + suffix);
+        } else {
+          // Multi-line replacement text
+          const lastLine = replacementParts[replacementParts.length - 1] + suffix;
+          const middleLines = replacementParts.slice(1, -1);
+          newLines.splice(
+            startRow,
+            endRow - startRow + 1,
+            firstLine,
+            ...middleLines,
+            lastLine,
+          );
+        }
       }
 
       const finalCursorRow = startRow + replacementParts.length - 1;
