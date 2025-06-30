@@ -901,7 +901,8 @@ function textBufferReducer(
           newLines.splice(startRow, endRow - startRow + 1, firstLine + suffix);
         } else {
           // Multi-line replacement text
-          const lastLine = replacementParts[replacementParts.length - 1] + suffix;
+          const lastLine =
+            replacementParts[replacementParts.length - 1] + suffix;
           const middleLines = replacementParts.slice(1, -1);
           newLines.splice(
             startRow,
