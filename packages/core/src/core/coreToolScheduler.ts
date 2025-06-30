@@ -25,6 +25,7 @@ import {
   ModifyContext,
   modifyWithEditor,
 } from '../tools/modifiable-tool.js';
+import * as Diff from 'diff';
 
 export type ValidatingToolCall = {
   status: 'validating';
@@ -469,10 +470,7 @@ export class CoreToolScheduler {
               ...confirmationDetails,
               onConfirm: (
                 outcome: ToolConfirmationOutcome,
-                payload?: {
-                  updatedParams?: Record<string, unknown>;
-                  updatedDiff?: string;
-                },
+                payload?: { newContent: string },
               ) =>
                 this.handleConfirmationResponse(
                   reqInfo.callId,
@@ -508,26 +506,17 @@ export class CoreToolScheduler {
 
   async handleConfirmationResponse(
     callId: string,
-    originalOnConfirm: (
-      outcome: ToolConfirmationOutcome,
-      payload?: {
-        updatedParams?: Record<string, unknown>;
-        updatedDiff?: string;
-      },
-    ) => Promise<void>,
+    originalOnConfirm: (outcome: ToolConfirmationOutcome) => Promise<void>,
     outcome: ToolConfirmationOutcome,
     signal: AbortSignal,
-    payload?: {
-      updatedParams?: Record<string, unknown>;
-      updatedDiff?: string;
-    },
+    payload?: { newContent: string },
   ): Promise<void> {
     const toolCall = this.toolCalls.find(
       (c) => c.request.callId === callId && c.status === 'awaiting_approval',
     );
 
     if (toolCall && toolCall.status === 'awaiting_approval') {
-      await originalOnConfirm(outcome, payload);
+      await originalOnConfirm(outcome);
     }
 
     this.toolCalls = this.toolCalls.map((call) => {
@@ -574,25 +563,60 @@ export class CoreToolScheduler {
         } as ToolCallConfirmationDetails);
       }
     } else {
-      const waitingToolCall = toolCall as WaitingToolCall;
-      if (
-        payload &&
-        waitingToolCall.confirmationDetails.type === 'edit' &&
-        isModifiableTool(waitingToolCall.tool)
-      ) {
-        if (payload.updatedParams) {
-          this.setArgsInternal(callId, payload.updatedParams);
-        }
-        if (payload.updatedDiff) {
-          this.setStatusInternal(callId, 'awaiting_approval', {
-            ...waitingToolCall.confirmationDetails,
-            fileDiff: payload.updatedDiff,
-          });
-        }
+      // If the user provided new content, apply it before scheduling.
+      if (payload?.newContent && toolCall) {
+        await this._applyInlineEdit(
+          toolCall as WaitingToolCall,
+          payload,
+          signal,
+        );
       }
       this.setStatusInternal(callId, 'scheduled');
     }
     this.attemptExecutionOfScheduledCalls(signal);
+  }
+
+  /**
+   * Applies user-provided content changes to a tool call that is awaiting confirmation.
+   * This method updates the tool's arguments and refreshes the confirmation prompt with a new diff
+   * before the tool is scheduled for execution.
+   * @private
+   */
+  private async _applyInlineEdit(
+    toolCall: WaitingToolCall,
+    payload: { newContent: string },
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (
+      toolCall.confirmationDetails.type !== 'edit' ||
+      !isModifiableTool(toolCall.tool)
+    ) {
+      return;
+    }
+
+    const modifyContext = toolCall.tool.getModifyContext(signal);
+    const currentContent = await modifyContext.getCurrentContent(
+      toolCall.request.args,
+    );
+
+    const updatedParams = modifyContext.createUpdatedParams(
+      currentContent,
+      payload.newContent,
+      toolCall.request.args,
+    );
+    const updatedDiff = Diff.createPatch(
+      modifyContext.getFilePath(toolCall.request.args),
+      currentContent,
+      payload.newContent,
+      'Current',
+      'Proposed',
+    );
+
+    this.setArgsInternal(toolCall.request.callId, updatedParams);
+    this.setStatusInternal(toolCall.request.callId, 'awaiting_approval', {
+      ...toolCall.confirmationDetails,
+      fileDiff: updatedDiff,
+    });
   }
 
   private attemptExecutionOfScheduledCalls(signal: AbortSignal): void {
