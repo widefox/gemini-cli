@@ -439,8 +439,7 @@ type TextBufferAction =
     }
   | { type: 'move_to_offset'; payload: { text: string; offset: number } }
   | { type: 'set_clipboard'; payload: string | null }
-  | { type: 'paste' }
-  | { type: 'start_selection' };
+  | { type: 'paste' };
 
 function textBufferReducer(
   state: TextBufferState,
@@ -996,13 +995,6 @@ function textBufferReducer(
       return { ...state, clipboard: action.payload };
     }
 
-    case 'start_selection': {
-      return {
-        ...state,
-        selectionAnchor: [state.cursorRow, state.cursorCol],
-      };
-    }
-
     default:
       return state;
   }
@@ -1418,9 +1410,6 @@ export function useTextBuffer({
       dispatch({ type: 'paste' });
       return state.clipboard !== null;
     }, [state.clipboard]),
-    startSelection: useCallback(() => {
-      dispatch({ type: 'start_selection' });
-    }, []),
   };
   return returnValue;
 }
@@ -1532,7 +1521,6 @@ export interface TextBuffer {
   // Selection & Clipboard
   copy: () => string | null;
   paste: () => boolean;
-  startSelection: () => void;
   replaceRangeByOffset: (
     startOffset: number,
     endOffset: number,
