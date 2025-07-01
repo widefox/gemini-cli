@@ -433,7 +433,8 @@ type TextBufferAction =
     }
   | { type: 'move_to_offset'; payload: { text: string; offset: number } }
   | { type: 'set_clipboard'; payload: string | null }
-  | { type: 'paste' };
+  | { type: 'paste' }
+  | { type: 'create_undo_snapshot' };
 
 function textBufferReducer(
   state: TextBufferState,
@@ -974,8 +975,15 @@ function textBufferReducer(
       return { ...state, clipboard: action.payload };
     }
 
-    default:
-      return state;
+    case 'create_undo_snapshot': {
+      return pushUndo(state);
+    }
+
+    default: {
+      const exhaustiveCheck: never = action;
+	    console.warn(`Unknown action encountered: ${exhaustiveCheck}`); 
+	    return state;
+    }
   }
 }
 
@@ -1148,7 +1156,7 @@ export function useTextBuffer({
       const filePath = pathMod.join(tmpDir, 'buffer.txt');
       fs.writeFileSync(filePath, text, 'utf8');
 
-      dispatch({ type: 'set_text', payload: text, pushToUndo: true });
+      dispatch({ type: 'create_undo_snapshot' });
 
       const wasRaw = stdin?.isRaw ?? false;
       try {
