@@ -481,7 +481,7 @@ export function textBufferReducer(
       let newCursorRow = nextState.cursorRow;
       let newCursorCol = nextState.cursorCol;
 
-      const currentLine = (r: number) => newLines[r] ?? '';
+    const currentLine = (r: number) => newLines[r] ?? '';
 
       const str = stripUnsafeCharacters(
         action.payload.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
