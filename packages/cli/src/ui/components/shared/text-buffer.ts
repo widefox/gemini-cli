@@ -625,8 +625,19 @@ export function textBufferReducer(
             const lineContent = lines[cursorRow];
             const arr = toCodePoints(lineContent);
             let start = cursorCol;
-            while (start > 0 && !isWordChar(arr[start - 1])) start--;
-            while (start > 0 && isWordChar(arr[start - 1])) start--;
+            let onlySpaces = true;
+            for (let i = 0; i < start; i++) {
+              if (isWordChar(arr[i])) {
+                onlySpaces = false;
+                break;
+              }
+            }
+            if (onlySpaces && start > 0) {
+              start--;
+            } else {
+              while (start > 0 && !isWordChar(arr[start - 1])) start--;
+              while (start > 0 && isWordChar(arr[start - 1])) start--;
+            }
             newCursorCol = start;
           }
           return {
