@@ -436,7 +436,7 @@ type TextBufferAction =
   | { type: 'paste' }
   | { type: 'create_undo_snapshot' };
 
-function textBufferReducer(
+export function textBufferReducer(
   state: TextBufferState,
   action: TextBufferAction,
 ): TextBufferState {
@@ -981,8 +981,8 @@ function textBufferReducer(
 
     default: {
       const exhaustiveCheck: never = action;
-	    console.warn(`Unknown action encountered: ${exhaustiveCheck}`); 
-	    return state;
+      console.warn(`Unknown action encountered: ${exhaustiveCheck}`);
+      return state;
     }
   }
 }

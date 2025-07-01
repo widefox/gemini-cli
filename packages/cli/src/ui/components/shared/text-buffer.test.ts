@@ -11,7 +11,149 @@ import {
   Viewport,
   TextBuffer,
   offsetToLogicalPos,
+  textBufferReducer,
+  TextBufferState,
+  TextBufferAction,
 } from './text-buffer.js';
+
+const initialState: TextBufferState = {
+  lines: [''],
+  cursorRow: 0,
+  cursorCol: 0,
+  preferredCol: null,
+  undoStack: [],
+  redoStack: [],
+  clipboard: null,
+  selectionAnchor: null,
+};
+
+describe('textBufferReducer', () => {
+  it('should return the initial state if state is undefined', () => {
+    const action = { type: 'unknown_action' } as unknown as TextBufferAction;
+    const state = textBufferReducer(initialState, action);
+    expect(state).toEqual(initialState);
+  });
+
+  describe('set_text action', () => {
+    it('should set new text and move cursor to the end', () => {
+      const action: TextBufferAction = {
+        type: 'set_text',
+        payload: 'hello\nworld',
+      };
+      const state = textBufferReducer(initialState, action);
+      expect(state.lines).toEqual(['hello', 'world']);
+      expect(state.cursorRow).toBe(1);
+      expect(state.cursorCol).toBe(5);
+      expect(state.undoStack.length).toBe(1);
+    });
+
+    it('should not create an undo snapshot if pushToUndo is false', () => {
+      const action: TextBufferAction = {
+        type: 'set_text',
+        payload: 'no undo',
+        pushToUndo: false,
+      };
+      const state = textBufferReducer(initialState, action);
+      expect(state.lines).toEqual(['no undo']);
+      expect(state.undoStack.length).toBe(0);
+    });
+  });
+
+  describe('insert action', () => {
+    it('should insert a character', () => {
+      const action: TextBufferAction = { type: 'insert', payload: 'a' };
+      const state = textBufferReducer(initialState, action);
+      expect(state.lines).toEqual(['a']);
+      expect(state.cursorCol).toBe(1);
+    });
+
+    it('should insert a newline', () => {
+      const stateWithText = { ...initialState, lines: ['hello'] };
+      const action: TextBufferAction = { type: 'insert', payload: '\n' };
+      const state = textBufferReducer(stateWithText, action);
+      expect(state.lines).toEqual(['', 'hello']);
+      expect(state.cursorRow).toBe(1);
+      expect(state.cursorCol).toBe(0);
+    });
+  });
+
+  describe('backspace action', () => {
+    it('should remove a character', () => {
+      const stateWithText: TextBufferState = {
+        ...initialState,
+        lines: ['a'],
+        cursorRow: 0,
+        cursorCol: 1,
+      };
+      const action: TextBufferAction = { type: 'backspace' };
+      const state = textBufferReducer(stateWithText, action);
+      expect(state.lines).toEqual(['']);
+      expect(state.cursorCol).toBe(0);
+    });
+
+    it('should join lines if at the beginning of a line', () => {
+      const stateWithText: TextBufferState = {
+        ...initialState,
+        lines: ['hello', 'world'],
+        cursorRow: 1,
+        cursorCol: 0,
+      };
+      const action: TextBufferAction = { type: 'backspace' };
+      const state = textBufferReducer(stateWithText, action);
+      expect(state.lines).toEqual(['helloworld']);
+      expect(state.cursorRow).toBe(0);
+      expect(state.cursorCol).toBe(5);
+    });
+  });
+
+  describe('undo/redo actions', () => {
+    it('should undo and redo a change', () => {
+      // 1. Insert text
+      const insertAction: TextBufferAction = {
+        type: 'insert',
+        payload: 'test',
+      };
+      const stateAfterInsert = textBufferReducer(initialState, insertAction);
+      expect(stateAfterInsert.lines).toEqual(['test']);
+      expect(stateAfterInsert.undoStack.length).toBe(1);
+
+      // 2. Undo
+      const undoAction: TextBufferAction = { type: 'undo' };
+      const stateAfterUndo = textBufferReducer(stateAfterInsert, undoAction);
+      expect(stateAfterUndo.lines).toEqual(['']);
+      expect(stateAfterUndo.undoStack.length).toBe(0);
+      expect(stateAfterUndo.redoStack.length).toBe(1);
+
+      // 3. Redo
+      const redoAction: TextBufferAction = { type: 'redo' };
+      const stateAfterRedo = textBufferReducer(stateAfterUndo, redoAction);
+      expect(stateAfterRedo.lines).toEqual(['test']);
+      expect(stateAfterRedo.undoStack.length).toBe(1);
+      expect(stateAfterRedo.redoStack.length).toBe(0);
+    });
+  });
+
+  describe('create_undo_snapshot action', () => {
+    it('should create a snapshot without changing state', () => {
+      const stateWithText: TextBufferState = {
+        ...initialState,
+        lines: ['hello'],
+        cursorRow: 0,
+        cursorCol: 5,
+      };
+      const action: TextBufferAction = { type: 'create_undo_snapshot' };
+      const state = textBufferReducer(stateWithText, action);
+
+      expect(state.lines).toEqual(['hello']);
+      expect(state.cursorRow).toBe(0);
+      expect(state.cursorCol).toBe(5);
+      expect(state.undoStack.length).toBe(1);
+      expect(state.undoStack[0].lines).toEqual(['hello']);
+      expect(state.undoStack[0].cursorRow).toBe(0);
+      expect(state.undoStack[0].cursorCol).toBe(5);
+    });
+  });
+});
 
 // Helper to get the state from the hook
 const getBufferState = (result: { current: TextBuffer }) => ({
