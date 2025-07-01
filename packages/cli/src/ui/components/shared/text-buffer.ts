@@ -24,13 +24,6 @@ export type Direction =
   | 'home'
   | 'end';
 
-// TODO(jacob314): refactor so all edit operations to be part of this list.
-// This makes it robust for clients to apply multiple edit operations without
-// having to carefully reason about how React manages state.
-type UpdateOperation =
-  | { type: 'insert'; payload: string }
-  | { type: 'backspace' };
-
 // Simple helper for word‑wise ops.
 function isWordChar(ch: string | undefined): boolean {
   if (ch === undefined) {
@@ -412,7 +405,8 @@ const historyLimit = 100;
 
 type TextBufferAction =
   | { type: 'set_text'; payload: string; pushToUndo?: boolean }
-  | { type: 'apply_operations'; payload: UpdateOperation[] }
+  | { type: 'insert'; payload: string }
+  | { type: 'backspace' }
   | {
       type: 'move';
       payload: {
@@ -482,34 +476,7 @@ function textBufferReducer(
       };
     }
 
-    case 'apply_operations': {
-      if (action.payload.length === 0) return state;
-
-      const expandedOps: UpdateOperation[] = [];
-      for (const op of action.payload) {
-        if (op.type === 'insert') {
-          let currentText = '';
-          for (const char of toCodePoints(op.payload)) {
-            if (char.codePointAt(0) === 127) {
-              if (currentText.length > 0) {
-                expandedOps.push({ type: 'insert', payload: currentText });
-                currentText = '';
-              }
-              expandedOps.push({ type: 'backspace' });
-            } else {
-              currentText += char;
-            }
-          }
-          if (currentText.length > 0) {
-            expandedOps.push({ type: 'insert', payload: currentText });
-          }
-        } else {
-          expandedOps.push(op);
-        }
-      }
-
-      if (expandedOps.length === 0) return state;
-
+    case 'insert': {
       const nextState = pushUndo(state);
       const newLines = [...nextState.lines];
       let newCursorRow = nextState.cursorRow;
@@ -517,52 +484,64 @@ function textBufferReducer(
 
       const currentLine = (r: number) => newLines[r] ?? '';
 
-      for (const op of expandedOps) {
-        if (op.type === 'insert') {
-          const str = stripUnsafeCharacters(
-            op.payload.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
-          );
-          const parts = str.split('\n');
-          const lineContent = currentLine(newCursorRow);
-          const before = cpSlice(lineContent, 0, newCursorCol);
-          const after = cpSlice(lineContent, newCursorCol);
+      const str = stripUnsafeCharacters(
+        action.payload.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
+      );
+      const parts = str.split('\n');
+      const lineContent = currentLine(newCursorRow);
+      const before = cpSlice(lineContent, 0, newCursorCol);
+      const after = cpSlice(lineContent, newCursorCol);
 
-          if (parts.length > 1) {
-            newLines[newCursorRow] = before + parts[0];
-            const remainingParts = parts.slice(1);
-            const lastPartOriginal = remainingParts.pop() ?? '';
-            newLines.splice(newCursorRow + 1, 0, ...remainingParts);
-            newLines.splice(
-              newCursorRow + parts.length - 1,
-              0,
-              lastPartOriginal + after,
-            );
-            newCursorRow = newCursorRow + parts.length - 1;
-            newCursorCol = cpLen(lastPartOriginal);
-          } else {
-            newLines[newCursorRow] = before + parts[0] + after;
-            newCursorCol = cpLen(before) + cpLen(parts[0]);
-          }
-        } else if (op.type === 'backspace') {
-          if (newCursorCol === 0 && newCursorRow === 0) continue;
+      if (parts.length > 1) {
+        newLines[newCursorRow] = before + parts[0];
+        const remainingParts = parts.slice(1);
+        const lastPartOriginal = remainingParts.pop() ?? '';
+        newLines.splice(newCursorRow + 1, 0, ...remainingParts);
+        newLines.splice(
+          newCursorRow + parts.length - 1,
+          0,
+          lastPartOriginal + after,
+        );
+        newCursorRow = newCursorRow + parts.length - 1;
+        newCursorCol = cpLen(lastPartOriginal);
+      } else {
+        newLines[newCursorRow] = before + parts[0] + after;
+        newCursorCol = cpLen(before) + cpLen(parts[0]);
+      }
 
-          if (newCursorCol > 0) {
-            const lineContent = currentLine(newCursorRow);
-            newLines[newCursorRow] =
-              cpSlice(lineContent, 0, newCursorCol - 1) +
-              cpSlice(lineContent, newCursorCol);
-            newCursorCol--;
-          } else if (newCursorRow > 0) {
-            const prevLineContent = currentLine(newCursorRow - 1);
-            const currentLineContentVal = currentLine(newCursorRow);
-            const newCol = cpLen(prevLineContent);
-            newLines[newCursorRow - 1] =
-              prevLineContent + currentLineContentVal;
-            newLines.splice(newCursorRow, 1);
-            newCursorRow--;
-            newCursorCol = newCol;
-          }
-        }
+      return {
+        ...nextState,
+        lines: newLines,
+        cursorRow: newCursorRow,
+        cursorCol: newCursorCol,
+        preferredCol: null,
+      };
+    }
+
+    case 'backspace': {
+      const nextState = pushUndo(state);
+      const newLines = [...nextState.lines];
+      let newCursorRow = nextState.cursorRow;
+      let newCursorCol = nextState.cursorCol;
+
+      const currentLine = (r: number) => newLines[r] ?? '';
+
+      if (newCursorCol === 0 && newCursorRow === 0) return state;
+
+      if (newCursorCol > 0) {
+        const lineContent = currentLine(newCursorRow);
+        newLines[newCursorRow] =
+          cpSlice(lineContent, 0, newCursorCol - 1) +
+          cpSlice(lineContent, newCursorCol);
+        newCursorCol--;
+      } else if (newCursorRow > 0) {
+        const prevLineContent = currentLine(newCursorRow - 1);
+        const currentLineContentVal = currentLine(newCursorRow);
+        const newCol = cpLen(prevLineContent);
+        newLines[newCursorRow - 1] = prevLineContent + currentLineContentVal;
+        newLines.splice(newCursorRow, 1);
+        newCursorRow--;
+        newCursorCol = newCol;
       }
 
       return {
@@ -1064,19 +1043,13 @@ export function useTextBuffer({
     }
   }, [visualCursor, visualScrollRow, viewport]);
 
-  const applyOperations = useCallback((ops: UpdateOperation[]) => {
-    dispatch({ type: 'apply_operations', payload: ops });
-  }, []);
-
   const insert = useCallback(
     (ch: string): void => {
       if (/[\n\r]/.test(ch)) {
-        applyOperations([{ type: 'insert', payload: ch }]);
+        dispatch({ type: 'insert', payload: ch });
         return;
       }
       dbg('insert', { ch, beforeCursor: [cursorRow, cursorCol] });
-
-      ch = stripUnsafeCharacters(ch);
 
       const minLengthToInferAsDragDrop = 3;
       if (ch.length >= minLengthToInferAsDragDrop) {
@@ -1094,19 +1067,34 @@ export function useTextBuffer({
           ch = `@${potentialPath}`;
         }
       }
-      applyOperations([{ type: 'insert', payload: ch }]);
+
+      let currentText = '';
+      for (const char of toCodePoints(ch)) {
+        if (char.codePointAt(0) === 127) {
+          if (currentText.length > 0) {
+            dispatch({ type: 'insert', payload: currentText });
+            currentText = '';
+          }
+          dispatch({ type: 'backspace' });
+        } else {
+          currentText += char;
+        }
+      }
+      if (currentText.length > 0) {
+        dispatch({ type: 'insert', payload: currentText });
+      }
     },
-    [applyOperations, cursorRow, cursorCol, isValidPath],
+    [cursorRow, cursorCol, isValidPath],
   );
 
   const newline = useCallback((): void => {
-    applyOperations([{ type: 'insert', payload: '\n' }]);
-  }, [applyOperations]);
+    dispatch({ type: 'insert', payload: '\n' });
+  }, []);
 
   const backspace = useCallback((): void => {
     if (cursorCol === 0 && cursorRow === 0) return;
-    applyOperations([{ type: 'backspace' }]);
-  }, [applyOperations, cursorRow, cursorCol]);
+    dispatch({ type: 'backspace' });
+  }, [cursorRow, cursorCol]);
 
   const del = useCallback((): void => {
     dispatch({ type: 'delete' });
@@ -1372,8 +1360,6 @@ export function useTextBuffer({
     handleInput,
     openInExternalEditor,
 
-    applyOperations,
-
     copy: useCallback(() => {
       if (!selectionAnchor) {
         return null;
@@ -1527,7 +1513,4 @@ export interface TextBuffer {
     replacementText: string,
   ) => boolean;
   moveToOffset(offset: number): void;
-
-  // Batch updates
-  applyOperations: (ops: UpdateOperation[]) => void;
 }

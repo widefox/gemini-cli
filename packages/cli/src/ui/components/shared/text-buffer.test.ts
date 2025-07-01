@@ -644,11 +644,27 @@ describe('useTextBuffer', () => {
       expect(getBufferState(result).cursor).toEqual([0, 5]);
 
       act(() => {
-        result.current.applyOperations([
-          { type: 'backspace' },
-          { type: 'backspace' },
-          { type: 'backspace' },
-        ]);
+        result.current.handleInput({
+          name: 'backspace',
+          ctrl: false,
+          meta: false,
+          shift: false,
+          sequence: '\x7f',
+        });
+        result.current.handleInput({
+          name: 'backspace',
+          ctrl: false,
+          meta: false,
+          shift: false,
+          sequence: '\x7f',
+        });
+        result.current.handleInput({
+          name: 'backspace',
+          ctrl: false,
+          meta: false,
+          shift: false,
+          sequence: '\x7f',
+        });
       });
       expect(getBufferState(result).text).toBe('ab');
       expect(getBufferState(result).cursor).toEqual([0, 2]);
@@ -666,9 +682,7 @@ describe('useTextBuffer', () => {
       expect(getBufferState(result).cursor).toEqual([0, 5]);
 
       act(() => {
-        result.current.applyOperations([
-          { type: 'insert', payload: '\x7f\x7f\x7f' },
-        ]);
+        result.current.insert('\x7f\x7f\x7f');
       });
       expect(getBufferState(result).text).toBe('ab');
       expect(getBufferState(result).cursor).toEqual([0, 2]);
@@ -686,9 +700,7 @@ describe('useTextBuffer', () => {
       expect(getBufferState(result).cursor).toEqual([0, 5]);
 
       act(() => {
-        result.current.applyOperations([
-          { type: 'insert', payload: '\x7fI\x7f\x7fNEW' },
-        ]);
+        result.current.insert('\x7fI\x7f\x7fNEW');
       });
       expect(getBufferState(result).text).toBe('abcNEW');
       expect(getBufferState(result).cursor).toEqual([0, 6]);
@@ -774,11 +786,9 @@ Contrary to popular belief, Lorem Ipsum is not simply random text. It has roots 
 
       // Simulate pasting the long text multiple times
       act(() => {
-        result.current.applyOperations([
-          { type: 'insert', payload: longText },
-          { type: 'insert', payload: longText },
-          { type: 'insert', payload: longText },
-        ]);
+        result.current.insert(longText);
+        result.current.insert(longText);
+        result.current.insert(longText);
       });
 
       const state = getBufferState(result);
