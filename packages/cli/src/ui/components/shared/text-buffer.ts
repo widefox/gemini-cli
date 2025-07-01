@@ -432,8 +432,6 @@ type TextBufferAction =
       };
     }
   | { type: 'move_to_offset'; payload: { text: string; offset: number } }
-  | { type: 'set_clipboard'; payload: string | null }
-  | { type: 'paste' }
   | { type: 'create_undo_snapshot' };
 
 export function textBufferReducer(
@@ -853,49 +851,6 @@ export function textBufferReducer(
       };
     }
 
-    case 'paste': {
-      if (state.clipboard === null) return state;
-      const nextState = pushUndo(state);
-      const { cursorRow, cursorCol } = nextState;
-      const lineContent = currentLine(cursorRow);
-      const before = cpSlice(lineContent, 0, cursorCol);
-      const after = cpSlice(lineContent, cursorCol);
-      const newLines = [...nextState.lines];
-
-      const pasteContent = stripUnsafeCharacters(
-        state.clipboard.replace(/\r\n/g, '\n').replace(/\r/g, '\n'),
-      );
-      const parts = pasteContent.split('\n');
-
-      let newCursorRow = cursorRow;
-      let newCursorCol = cursorCol;
-
-      if (parts.length > 1) {
-        newLines[newCursorRow] = before + parts[0];
-        const remainingParts = parts.slice(1);
-        const lastPartOriginal = remainingParts.pop() ?? '';
-        newLines.splice(newCursorRow + 1, 0, ...remainingParts);
-        newLines.splice(
-          newCursorRow + parts.length - 1,
-          0,
-          lastPartOriginal + after,
-        );
-        newCursorRow = newCursorRow + parts.length - 1;
-        newCursorCol = cpLen(lastPartOriginal);
-      } else {
-        newLines[newCursorRow] = before + parts[0] + after;
-        newCursorCol = cpLen(before) + cpLen(parts[0]);
-      }
-
-      return {
-        ...nextState,
-        lines: newLines,
-        cursorRow: newCursorRow,
-        cursorCol: newCursorCol,
-        preferredCol: null,
-      };
-    }
-
     case 'replace_range': {
       const { startRow, startCol, endRow, endCol, text } = action.payload;
       if (
@@ -969,10 +924,6 @@ export function textBufferReducer(
         cursorCol: newCol,
         preferredCol: null,
       };
-    }
-
-    case 'set_clipboard': {
-      return { ...state, clipboard: action.payload };
     }
 
     case 'create_undo_snapshot': {
@@ -1367,43 +1318,6 @@ export function useTextBuffer({
     killLineLeft,
     handleInput,
     openInExternalEditor,
-
-    copy: useCallback(() => {
-      if (!selectionAnchor) {
-        return null;
-      }
-
-      const [ar, ac] = selectionAnchor;
-      const [br, bc] = [cursorRow, cursorCol];
-
-      if (ar === br && ac === bc) {
-        return null;
-      }
-
-      const topBefore = ar < br || (ar === br && ac < bc);
-      const [sr, sc, er, ec] = topBefore ? [ar, ac, br, bc] : [br, bc, ar, ac];
-
-      const currentLine = (r: number): string => lines[r] ?? '';
-
-      let selectedTextVal;
-      if (sr === er) {
-        selectedTextVal = cpSlice(currentLine(sr), sc, ec);
-      } else {
-        const parts: string[] = [cpSlice(currentLine(sr), sc)];
-        for (let r = sr + 1; r < er; r++) {
-          parts.push(currentLine(r));
-        }
-        parts.push(cpSlice(currentLine(er), 0, ec));
-        selectedTextVal = parts.join('\n');
-      }
-
-      dispatch({ type: 'set_clipboard', payload: selectedTextVal });
-      return selectedTextVal;
-    }, [selectionAnchor, cursorRow, cursorCol, lines]),
-    paste: useCallback(() => {
-      dispatch({ type: 'paste' });
-      return state.clipboard !== null;
-    }, [state.clipboard]),
   };
   return returnValue;
 }
@@ -1512,9 +1426,6 @@ export interface TextBuffer {
    */
   openInExternalEditor: (opts?: { editor?: string }) => Promise<void>;
 
-  // Selection & Clipboard
-  copy: () => string | null;
-  paste: () => boolean;
   replaceRangeByOffset: (
     startOffset: number,
     endOffset: number,
