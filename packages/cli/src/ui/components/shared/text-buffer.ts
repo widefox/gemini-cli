@@ -411,24 +411,24 @@ interface TextBufferState {
 const historyLimit = 100;
 
 type TextBufferAction =
-  | { type: 'SET_TEXT'; payload: string; pushToUndo?: boolean }
-  | { type: 'APPLY_OPERATIONS'; payload: UpdateOperation[] }
+  | { type: 'set_text'; payload: string; pushToUndo?: boolean }
+  | { type: 'apply_operations'; payload: UpdateOperation[] }
   | {
-      type: 'MOVE';
+      type: 'move';
       payload: {
         dir: Direction;
         visualLayout: ReturnType<typeof calculateVisualLayout>;
       };
     }
-  | { type: 'DELETE' }
-  | { type: 'DELETE_WORD_LEFT' }
-  | { type: 'DELETE_WORD_RIGHT' }
-  | { type: 'KILL_LINE_RIGHT' }
-  | { type: 'KILL_LINE_LEFT' }
-  | { type: 'UNDO' }
-  | { type: 'REDO' }
+  | { type: 'delete' }
+  | { type: 'delete_word_left' }
+  | { type: 'delete_word_right' }
+  | { type: 'kill_line_right' }
+  | { type: 'kill_line_left' }
+  | { type: 'undo' }
+  | { type: 'redo' }
   | {
-      type: 'REPLACE_RANGE';
+      type: 'replace_range';
       payload: {
         startRow: number;
         startCol: number;
@@ -437,10 +437,10 @@ type TextBufferAction =
         text: string;
       };
     }
-  | { type: 'MOVE_TO_OFFSET'; payload: { text: string; offset: number } }
-  | { type: 'COPY' }
-  | { type: 'PASTE' }
-  | { type: 'START_SELECTION' };
+  | { type: 'move_to_offset'; payload: { text: string; offset: number } }
+  | { type: 'set_clipboard'; payload: string | null }
+  | { type: 'paste' }
+  | { type: 'start_selection' };
 
 function textBufferReducer(
   state: TextBufferState,
@@ -463,7 +463,7 @@ function textBufferReducer(
   const currentLineLen = (r: number): number => cpLen(currentLine(r));
 
   switch (action.type) {
-    case 'SET_TEXT': {
+    case 'set_text': {
       dbg('setText', { text: action.payload });
       let nextState = state;
       if (action.pushToUndo !== false) {
@@ -483,7 +483,7 @@ function textBufferReducer(
       };
     }
 
-    case 'APPLY_OPERATIONS': {
+    case 'apply_operations': {
       if (action.payload.length === 0) return state;
 
       const expandedOps: UpdateOperation[] = [];
@@ -575,7 +575,7 @@ function textBufferReducer(
       };
     }
 
-    case 'MOVE': {
+    case 'move': {
       const { dir, visualLayout } = action.payload;
       const { visualLines, visualCursor, visualToLogicalMap } = visualLayout;
 
@@ -709,7 +709,7 @@ function textBufferReducer(
       return state;
     }
 
-    case 'DELETE': {
+    case 'delete': {
       const { cursorRow, cursorCol, lines } = state;
       const lineContent = currentLine(cursorRow);
       if (cursorCol < currentLineLen(cursorRow)) {
@@ -730,7 +730,7 @@ function textBufferReducer(
       return state;
     }
 
-    case 'DELETE_WORD_LEFT': {
+    case 'delete_word_left': {
       const { cursorRow, cursorCol } = state;
       if (cursorCol === 0 && cursorRow === 0) return state;
       if (cursorCol === 0) {
@@ -778,7 +778,7 @@ function textBufferReducer(
       };
     }
 
-    case 'DELETE_WORD_RIGHT': {
+    case 'delete_word_right': {
       const { cursorRow, cursorCol, lines } = state;
       const lineContent = currentLine(cursorRow);
       const arr = toCodePoints(lineContent);
@@ -803,7 +803,7 @@ function textBufferReducer(
       return { ...nextState, lines: newLines, preferredCol: null };
     }
 
-    case 'KILL_LINE_RIGHT': {
+    case 'kill_line_right': {
       const { cursorRow, cursorCol, lines } = state;
       const lineContent = currentLine(cursorRow);
       if (cursorCol < currentLineLen(cursorRow)) {
@@ -823,7 +823,7 @@ function textBufferReducer(
       return state;
     }
 
-    case 'KILL_LINE_LEFT': {
+    case 'kill_line_left': {
       const { cursorRow, cursorCol } = state;
       if (cursorCol > 0) {
         const nextState = pushUndo(state);
@@ -840,7 +840,7 @@ function textBufferReducer(
       return state;
     }
 
-    case 'UNDO': {
+    case 'undo': {
       const stateToRestore = state.undoStack[state.undoStack.length - 1];
       if (!stateToRestore) return state;
 
@@ -857,7 +857,7 @@ function textBufferReducer(
       };
     }
 
-    case 'REDO': {
+    case 'redo': {
       const stateToRestore = state.redoStack[state.redoStack.length - 1];
       if (!stateToRestore) return state;
 
@@ -874,7 +874,7 @@ function textBufferReducer(
       };
     }
 
-    case 'PASTE': {
+    case 'paste': {
       if (state.clipboard === null) return state;
       const nextState = pushUndo(state);
       const { cursorRow, cursorCol } = nextState;
@@ -917,7 +917,7 @@ function textBufferReducer(
       };
     }
 
-    case 'REPLACE_RANGE': {
+    case 'replace_range': {
       const { startRow, startCol, endRow, endCol, text } = action.payload;
       if (
         startRow > endRow ||
@@ -981,7 +981,7 @@ function textBufferReducer(
       };
     }
 
-    case 'MOVE_TO_OFFSET': {
+    case 'move_to_offset': {
       const { text, offset } = action.payload;
       const [newRow, newCol] = offsetToLogicalPos(text, offset);
       return {
@@ -992,27 +992,11 @@ function textBufferReducer(
       };
     }
 
-    case 'COPY': {
-      if (!state.selectionAnchor) return state;
-      const [ar, ac] = state.selectionAnchor;
-      const [br, bc] = [state.cursorRow, state.cursorCol];
-      if (ar === br && ac === bc) return state;
-      const topBefore = ar < br || (ar === br && ac < bc);
-      const [sr, sc, er, ec] = topBefore ? [ar, ac, br, bc] : [br, bc, ar, ac];
-
-      let selectedTextVal;
-      if (sr === er) {
-        selectedTextVal = cpSlice(currentLine(sr), sc, ec);
-      } else {
-        const parts: string[] = [cpSlice(currentLine(sr), sc)];
-        for (let r = sr + 1; r < er; r++) parts.push(currentLine(r));
-        parts.push(cpSlice(currentLine(er), 0, ec));
-        selectedTextVal = parts.join('\n');
-      }
-      return { ...state, clipboard: selectedTextVal };
+    case 'set_clipboard': {
+      return { ...state, clipboard: action.payload };
     }
 
-    case 'START_SELECTION': {
+    case 'start_selection': {
       return {
         ...state,
         selectionAnchor: [state.cursorRow, state.cursorCol],
@@ -1022,8 +1006,6 @@ function textBufferReducer(
     default:
       return state;
   }
-
-  return state;
 }
 
 // --- End of reducer logic ---
@@ -1091,7 +1073,7 @@ export function useTextBuffer({
   }, [visualCursor, visualScrollRow, viewport]);
 
   const applyOperations = useCallback((ops: UpdateOperation[]) => {
-    dispatch({ type: 'APPLY_OPERATIONS', payload: ops });
+    dispatch({ type: 'apply_operations', payload: ops });
   }, []);
 
   const insert = useCallback(
@@ -1135,44 +1117,44 @@ export function useTextBuffer({
   }, [applyOperations, cursorRow, cursorCol]);
 
   const del = useCallback((): void => {
-    dispatch({ type: 'DELETE' });
+    dispatch({ type: 'delete' });
   }, []);
 
   const move = useCallback(
     (dir: Direction): void => {
-      dispatch({ type: 'MOVE', payload: { dir, visualLayout } });
+      dispatch({ type: 'move', payload: { dir, visualLayout } });
     },
     [visualLayout],
   );
 
   const undo = useCallback((): boolean => {
-    dispatch({ type: 'UNDO' });
+    dispatch({ type: 'undo' });
     return state.undoStack.length > 0;
   }, [state.undoStack.length]);
 
   const redo = useCallback((): boolean => {
-    dispatch({ type: 'REDO' });
+    dispatch({ type: 'redo' });
     return state.redoStack.length > 0;
   }, [state.redoStack.length]);
 
   const setText = useCallback((newText: string): void => {
-    dispatch({ type: 'SET_TEXT', payload: newText });
+    dispatch({ type: 'set_text', payload: newText });
   }, []);
 
   const deleteWordLeft = useCallback((): void => {
-    dispatch({ type: 'DELETE_WORD_LEFT' });
+    dispatch({ type: 'delete_word_left' });
   }, []);
 
   const deleteWordRight = useCallback((): void => {
-    dispatch({ type: 'DELETE_WORD_RIGHT' });
+    dispatch({ type: 'delete_word_right' });
   }, []);
 
   const killLineRight = useCallback((): void => {
-    dispatch({ type: 'KILL_LINE_RIGHT' });
+    dispatch({ type: 'kill_line_right' });
   }, []);
 
   const killLineLeft = useCallback((): void => {
-    dispatch({ type: 'KILL_LINE_LEFT' });
+    dispatch({ type: 'kill_line_left' });
   }, []);
 
   const openInExternalEditor = useCallback(
@@ -1186,7 +1168,7 @@ export function useTextBuffer({
       const filePath = pathMod.join(tmpDir, 'buffer.txt');
       fs.writeFileSync(filePath, text, 'utf8');
 
-      dispatch({ type: 'SET_TEXT', payload: text, pushToUndo: true });
+      dispatch({ type: 'set_text', payload: text, pushToUndo: true });
 
       const wasRaw = stdin?.isRaw ?? false;
       try {
@@ -1200,7 +1182,7 @@ export function useTextBuffer({
 
         let newText = fs.readFileSync(filePath, 'utf8');
         newText = newText.replace(/\r\n?/g, '\n');
-        dispatch({ type: 'SET_TEXT', payload: newText, pushToUndo: false });
+        dispatch({ type: 'set_text', payload: newText, pushToUndo: false });
       } catch (err) {
         console.error('[useTextBuffer] external editor error', err);
       } finally {
@@ -1338,7 +1320,7 @@ export function useTextBuffer({
         return false;
       }
       dispatch({
-        type: 'REPLACE_RANGE',
+        type: 'replace_range',
         payload: { startRow, startCol, endRow, endCol, text },
       });
       // This is a simplified return value. A more robust implementation
@@ -1363,7 +1345,7 @@ export function useTextBuffer({
 
   const moveToOffset = useCallback(
     (offset: number): void => {
-      dispatch({ type: 'MOVE_TO_OFFSET', payload: { text, offset } });
+      dispatch({ type: 'move_to_offset', payload: { text, offset } });
     },
     [text],
   );
@@ -1401,15 +1383,43 @@ export function useTextBuffer({
     applyOperations,
 
     copy: useCallback(() => {
-      dispatch({ type: 'COPY' });
-      return state.clipboard;
-    }, [state.clipboard]),
+      if (!selectionAnchor) {
+        return null;
+      }
+
+      const [ar, ac] = selectionAnchor;
+      const [br, bc] = [cursorRow, cursorCol];
+
+      if (ar === br && ac === bc) {
+        return null;
+      }
+
+      const topBefore = ar < br || (ar === br && ac < bc);
+      const [sr, sc, er, ec] = topBefore ? [ar, ac, br, bc] : [br, bc, ar, ac];
+
+      const currentLine = (r: number): string => lines[r] ?? '';
+
+      let selectedTextVal;
+      if (sr === er) {
+        selectedTextVal = cpSlice(currentLine(sr), sc, ec);
+      } else {
+        const parts: string[] = [cpSlice(currentLine(sr), sc)];
+        for (let r = sr + 1; r < er; r++) {
+          parts.push(currentLine(r));
+        }
+        parts.push(cpSlice(currentLine(er), 0, ec));
+        selectedTextVal = parts.join('\n');
+      }
+
+      dispatch({ type: 'set_clipboard', payload: selectedTextVal });
+      return selectedTextVal;
+    }, [selectionAnchor, cursorRow, cursorCol, lines]),
     paste: useCallback(() => {
-      dispatch({ type: 'PASTE' });
+      dispatch({ type: 'paste' });
       return state.clipboard !== null;
     }, [state.clipboard]),
     startSelection: useCallback(() => {
-      dispatch({ type: 'START_SELECTION' });
+      dispatch({ type: 'start_selection' });
     }, []),
   };
   return returnValue;
