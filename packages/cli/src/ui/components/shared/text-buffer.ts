@@ -943,7 +943,7 @@ export function textBufferReducer(
 
     default: {
       const exhaustiveCheck: never = action;
-      console.warn(`Unknown action encountered: ${exhaustiveCheck}`);
+      console.error(`Unknown action encountered: ${exhaustiveCheck}`);
       return state;
     }
   }
@@ -1019,7 +1019,6 @@ export function useTextBuffer({
         dispatch({ type: 'insert', payload: ch });
         return;
       }
-      dbg('insert', { ch, beforeCursor: [cursorRow, cursorCol] });
 
       const minLengthToInferAsDragDrop = 3;
       if (ch.length >= minLengthToInferAsDragDrop) {
@@ -1054,7 +1053,7 @@ export function useTextBuffer({
         dispatch({ type: 'insert', payload: currentText });
       }
     },
-    [cursorRow, cursorCol, isValidPath],
+    [isValidPath],
   );
 
   const newline = useCallback((): void => {
@@ -1062,9 +1061,8 @@ export function useTextBuffer({
   }, []);
 
   const backspace = useCallback((): void => {
-    if (cursorCol === 0 && cursorRow === 0) return;
     dispatch({ type: 'backspace' });
-  }, [cursorRow, cursorCol]);
+  }, []);
 
   const del = useCallback((): void => {
     dispatch({ type: 'delete' });
@@ -1077,15 +1075,13 @@ export function useTextBuffer({
     [visualLayout],
   );
 
-  const undo = useCallback((): boolean => {
+  const undo = useCallback((): void => {
     dispatch({ type: 'undo' });
-    return state.undoStack.length > 0;
-  }, [state.undoStack.length]);
+  }, []);
 
-  const redo = useCallback((): boolean => {
+  const redo = useCallback((): void => {
     dispatch({ type: 'redo' });
-    return state.redoStack.length > 0;
-  }, [state.redoStack.length]);
+  }, []);
 
   const setText = useCallback((newText: string): void => {
     dispatch({ type: 'set_text', payload: newText });
@@ -1160,18 +1156,8 @@ export function useTextBuffer({
       shift: boolean;
       paste: boolean;
       sequence: string;
-    }): boolean => {
+    }): void => {
       const { sequence: input } = key;
-      dbg('handleInput', {
-        key,
-        cursor: [cursorRow, cursorCol],
-        visualCursor,
-      });
-      const beforeText = text;
-      const beforeLogicalCursor = [cursorRow, cursorCol];
-      const beforeVisualCursor = [...visualCursor];
-
-      if (key.name === 'escape') return false;
 
       if (
         key.name === 'return' ||
@@ -1213,37 +1199,8 @@ export function useTextBuffer({
       else if (input && !key.ctrl && !key.meta) {
         insert(input);
       }
-
-      const textChanged = text !== beforeText;
-      // After operations, visualCursor might not be immediately updated if the change
-      // was to `lines`, `cursorRow`, or `cursorCol` which then triggers the useEffect.
-      // So, for return value, we check logical cursor change.
-      const cursorChanged =
-        cursorRow !== beforeLogicalCursor[0] ||
-        cursorCol !== beforeLogicalCursor[1] ||
-        visualCursor[0] !== beforeVisualCursor[0] ||
-        visualCursor[1] !== beforeVisualCursor[1];
-
-      dbg('handleInput:after', {
-        cursor: [cursorRow, cursorCol],
-        visualCursor,
-        text,
-      });
-      return textChanged || cursorChanged;
     },
-    [
-      text,
-      cursorRow,
-      cursorCol,
-      visualCursor,
-      newline,
-      move,
-      deleteWordLeft,
-      deleteWordRight,
-      backspace,
-      del,
-      insert,
-    ],
+    [newline, move, deleteWordLeft, deleteWordRight, backspace, del, insert],
   );
 
   const renderedVisualLines = useMemo(
@@ -1258,37 +1215,20 @@ export function useTextBuffer({
       endRow: number,
       endCol: number,
       text: string,
-    ): boolean => {
-      if (
-        startRow > endRow ||
-        (startRow === endRow && startCol > endCol) ||
-        startRow < 0 ||
-        startCol < 0 ||
-        endRow >= lines.length ||
-        (endRow < lines.length && endCol > cpLen(lines[endRow]))
-      ) {
-        return false;
-      }
+    ): void => {
       dispatch({
         type: 'replace_range',
         payload: { startRow, startCol, endRow, endCol, text },
       });
-      // This is a simplified return value. A more robust implementation
-      // might check if the state was actually changed.
-      return true;
     },
-    [lines],
+    [],
   );
 
   const replaceRangeByOffset = useCallback(
-    (
-      startOffset: number,
-      endOffset: number,
-      replacementText: string,
-    ): boolean => {
+    (startOffset: number, endOffset: number, replacementText: string): void => {
       const [startRow, startCol] = offsetToLogicalPos(text, startOffset);
       const [endRow, endCol] = offsetToLogicalPos(text, endOffset);
-      return replaceRange(startRow, startCol, endRow, endCol, replacementText);
+      replaceRange(startRow, startCol, endRow, endCol, replacementText);
     },
     [text, replaceRange],
   );
@@ -1368,8 +1308,8 @@ export interface TextBuffer {
   backspace: () => void;
   del: () => void;
   move: (dir: Direction) => void;
-  undo: () => boolean;
-  redo: () => boolean;
+  undo: () => void;
+  redo: () => void;
   /**
    * Replaces the text within the specified range with new text.
    * Handles both single-line and multi-line ranges.
@@ -1387,7 +1327,7 @@ export interface TextBuffer {
     endRow: number,
     endCol: number,
     text: string,
-  ) => boolean;
+  ) => void;
   /**
    * Delete the word to the *left* of the caret, mirroring common
    * Ctrl/Alt+Backspace behaviour in editors & terminals. Both the adjacent
@@ -1419,7 +1359,7 @@ export interface TextBuffer {
     shift: boolean;
     paste: boolean;
     sequence: string;
-  }) => boolean;
+  }) => void;
   /**
    * Opens the current buffer contents in the user's preferred terminal text
    * editor ($VISUAL or $EDITOR, falling back to "vi").  The method blocks
@@ -1441,6 +1381,6 @@ export interface TextBuffer {
     startOffset: number,
     endOffset: number,
     replacementText: string,
-  ) => boolean;
+  ) => void;
   moveToOffset(offset: number): void;
 }

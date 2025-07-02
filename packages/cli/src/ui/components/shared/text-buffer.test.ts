@@ -1061,17 +1061,15 @@ Contrary to popular belief, Lorem Ipsum is not simply random text. It has roots 
           isValidPath: () => false,
         }),
       );
-      let success = true;
       act(() => {
-        success = result.current.replaceRange(0, 5, 0, 3, 'fail'); // startCol > endCol in same line
+        result.current.replaceRange(0, 5, 0, 3, 'fail'); // startCol > endCol in same line
       });
-      expect(success).toBe(false);
+
       expect(getBufferState(result).text).toBe('test');
 
       act(() => {
-        success = result.current.replaceRange(1, 0, 0, 0, 'fail'); // startRow > endRow
+        result.current.replaceRange(1, 0, 0, 0, 'fail'); // startRow > endRow
       });
-      expect(success).toBe(false);
       expect(getBufferState(result).text).toBe('test');
     });
 
