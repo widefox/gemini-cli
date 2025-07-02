@@ -63,21 +63,6 @@ function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
 
-/* -------------------------------------------------------------------------
- *  Debug helper – enable verbose logging by setting env var TEXTBUFFER_DEBUG=1
- * ---------------------------------------------------------------------- */
-
-// Enable verbose logging only when requested via env var.
-const DEBUG =
-  process.env['TEXTBUFFER_DEBUG'] === '1' ||
-  process.env['TEXTBUFFER_DEBUG'] === 'true';
-
-function dbg(...args: unknown[]): void {
-  if (DEBUG) {
-    console.log('[TextBuffer]', ...args);
-  }
-}
-
 /* ────────────────────────────────────────────────────────────────────────── */
 
 interface UseTextBufferProps {
@@ -457,7 +442,6 @@ export function textBufferReducer(
 
   switch (action.type) {
     case 'set_text': {
-      dbg('setText', { text: action.payload });
       let nextState = state;
       if (action.pushToUndo !== false) {
         nextState = pushUndo(state);
@@ -1001,10 +985,6 @@ export function useTextBuffer({
 
   const text = useMemo(() => lines.join('\n'), [lines]);
 
-  useEffect(() => {
-    dispatch({ type: 'set_viewport_width', payload: viewport.width });
-  }, [viewport.width]);
-
   const visualLayout = useMemo(
     () =>
       calculateVisualLayout(lines, [cursorRow, cursorCol], state.viewportWidth),
@@ -1020,6 +1000,10 @@ export function useTextBuffer({
       onChange(text);
     }
   }, [text, onChange]);
+
+  useEffect(() => {
+    dispatch({ type: 'set_viewport_width', payload: viewport.width });
+  }, [viewport.width]);
 
   // Update visual scroll (vertical)
   useEffect(() => {
@@ -1253,12 +1237,9 @@ export function useTextBuffer({
     [text, replaceRange],
   );
 
-  const moveToOffset = useCallback(
-    (offset: number): void => {
-      dispatch({ type: 'move_to_offset', payload: { offset } });
-    },
-    [],
-  );
+  const moveToOffset = useCallback((offset: number): void => {
+    dispatch({ type: 'move_to_offset', payload: { offset } });
+  }, []);
 
   const returnValue: TextBuffer = {
     lines,
