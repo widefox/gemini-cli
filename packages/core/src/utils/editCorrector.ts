@@ -221,7 +221,8 @@ export async function ensureCorrectEdit(
         if (lastEditedByUsTime > 0) {
           const stats = fs.statSync(filePath);
           const diff = stats.mtimeMs - lastEditedByUsTime;
-          if (diff > 2000) { // Hard coded for 2 seconds
+          if (diff > 2000) {
+            // Hard coded for 2 seconds
             // This file was edited sooner
             const result: CorrectedEditResult = {
               params: { ...originalParams },
