@@ -17,6 +17,7 @@ import {
   Config,
   logToolCall,
   ToolCallEvent,
+  ToolConfirmationPayload
 } from '../index.js';
 import { Part, PartListUnion } from '@google/genai';
 import { getResponseTextFromParts } from '../utils/generateContentResponseUtilities.js';
@@ -458,7 +459,7 @@ export class CoreToolScheduler {
               ...confirmationDetails,
               onConfirm: (
                 outcome: ToolConfirmationOutcome,
-                payload?: { newContent: string },
+                payload?: ToolConfirmationPayload,
               ) =>
                 this.handleConfirmationResponse(
                   reqInfo.callId,
@@ -497,7 +498,7 @@ export class CoreToolScheduler {
     originalOnConfirm: (outcome: ToolConfirmationOutcome) => Promise<void>,
     outcome: ToolConfirmationOutcome,
     signal: AbortSignal,
-    payload?: { newContent: string },
+    payload?: ToolConfirmationPayload,
   ): Promise<void> {
     const toolCall = this.toolCalls.find(
       (c) => c.request.callId === callId && c.status === 'awaiting_approval',
@@ -551,9 +552,9 @@ export class CoreToolScheduler {
         } as ToolCallConfirmationDetails);
       }
     } else {
-      // If the user provided new content, apply it before scheduling.
+      // If the client provided new content, apply it before scheduling.
       if (payload?.newContent && toolCall) {
-        await this._applyInlineEdit(
+        await this._applyInlineModify(
           toolCall as WaitingToolCall,
           payload,
           signal,
@@ -570,9 +571,9 @@ export class CoreToolScheduler {
    * before the tool is scheduled for execution.
    * @private
    */
-  private async _applyInlineEdit(
+  private async _applyInlineModify(
     toolCall: WaitingToolCall,
-    payload: { newContent: string },
+    payload: ToolConfirmationPayload,
     signal: AbortSignal,
   ): Promise<void> {
     if (

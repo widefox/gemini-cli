@@ -201,11 +201,17 @@ export interface ToolEditConfirmationDetails {
   title: string;
   onConfirm: (
     outcome: ToolConfirmationOutcome,
-    payload?: { newContent: string },
+    payload?: ToolConfirmationPayload,
   ) => Promise<void>;
   fileName: string;
   fileDiff: string;
   isModifying?: boolean;
+}
+
+export interface ToolConfirmationPayload {
+  // used to override `modifiedProposedContent` for modifiable tools in the
+  // inline modify flow
+  newContent: string;
 }
 
 export interface ToolExecuteConfirmationDetails {

@@ -16,6 +16,7 @@ import {
   BaseTool,
   ToolCallConfirmationDetails,
   ToolConfirmationOutcome,
+  ToolConfirmationPayload,
   ToolResult,
   Config,
 } from '../index.js';
@@ -215,9 +216,7 @@ describe('CoreToolScheduler with payload', () => {
     );
 
     if (confirmationDetails) {
-      const payload = {
-        newContent: 'final version',
-      };
+      const payload : ToolConfirmationPayload = { newContent: 'final version' };
       await scheduler.handleConfirmationResponse(
         '1',
         confirmationDetails.onConfirm,
