@@ -399,7 +399,7 @@ interface TextBufferState {
   redoStack: UndoHistoryEntry[];
   clipboard: string | null;
   selectionAnchor: [number, number] | null;
-  viewport: Viewport;
+  viewportWidth: number;
 }
 
 const historyLimit = 100;
@@ -432,7 +432,8 @@ type TextBufferAction =
       };
     }
   | { type: 'move_to_offset'; payload: { text: string; offset: number } }
-  | { type: 'create_undo_snapshot' };
+  | { type: 'create_undo_snapshot' }
+  | { type: 'set_viewport_width'; payload: number };
 
 export function textBufferReducer(
   state: TextBufferState,
@@ -552,13 +553,20 @@ export function textBufferReducer(
       };
     }
 
+    case 'set_viewport_width': {
+      if (action.payload === state.viewportWidth) {
+        return state;
+      }
+      return { ...state, viewportWidth: action.payload };
+    }
+
     case 'move': {
       const { dir } = action.payload;
-      const { lines, cursorRow, cursorCol, viewport } = state;
+      const { lines, cursorRow, cursorCol, viewportWidth } = state;
       const visualLayout = calculateVisualLayout(
         lines,
         [cursorRow, cursorCol],
-        viewport.width,
+        viewportWidth,
       );
       const { visualLines, visualCursor, visualToLogicalMap } = visualLayout;
 
@@ -981,18 +989,23 @@ export function useTextBuffer({
       redoStack: [],
       clipboard: null,
       selectionAnchor: null,
-      viewport,
+      viewportWidth: viewport.width,
     };
-  }, [initialText, initialCursorOffset, viewport]);
+  }, [initialText, initialCursorOffset, viewport.width]);
 
   const [state, dispatch] = useReducer(textBufferReducer, initialState);
   const { lines, cursorRow, cursorCol, preferredCol, selectionAnchor } = state;
 
   const text = useMemo(() => lines.join('\n'), [lines]);
 
+  useEffect(() => {
+    dispatch({ type: 'set_viewport_width', payload: viewport.width });
+  }, [viewport.width]);
+
   const visualLayout = useMemo(
-    () => calculateVisualLayout(lines, [cursorRow, cursorCol], viewport.width),
-    [lines, cursorRow, cursorCol, viewport.width],
+    () =>
+      calculateVisualLayout(lines, [cursorRow, cursorCol], state.viewportWidth),
+    [lines, cursorRow, cursorCol, state.viewportWidth],
   );
 
   const { visualLines, visualCursor } = visualLayout;
