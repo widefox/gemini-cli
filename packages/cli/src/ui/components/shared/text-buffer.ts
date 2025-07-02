@@ -399,6 +399,7 @@ interface TextBufferState {
   redoStack: UndoHistoryEntry[];
   clipboard: string | null;
   selectionAnchor: [number, number] | null;
+  viewport: Viewport;
 }
 
 const historyLimit = 100;
@@ -411,7 +412,6 @@ type TextBufferAction =
       type: 'move';
       payload: {
         dir: Direction;
-        visualLayout: ReturnType<typeof calculateVisualLayout>;
       };
     }
   | { type: 'delete' }
@@ -553,7 +553,13 @@ export function textBufferReducer(
     }
 
     case 'move': {
-      const { dir, visualLayout } = action.payload;
+      const { dir } = action.payload;
+      const { lines, cursorRow, cursorCol, viewport } = state;
+      const visualLayout = calculateVisualLayout(
+        lines,
+        [cursorRow, cursorCol],
+        viewport.width,
+      );
       const { visualLines, visualCursor, visualToLogicalMap } = visualLayout;
 
       let newVisualRow = visualCursor[0];
@@ -975,8 +981,9 @@ export function useTextBuffer({
       redoStack: [],
       clipboard: null,
       selectionAnchor: null,
+      viewport,
     };
-  }, [initialText, initialCursorOffset]);
+  }, [initialText, initialCursorOffset, viewport]);
 
   const [state, dispatch] = useReducer(textBufferReducer, initialState);
   const { lines, cursorRow, cursorCol, preferredCol, selectionAnchor } = state;
@@ -1068,12 +1075,9 @@ export function useTextBuffer({
     dispatch({ type: 'delete' });
   }, []);
 
-  const move = useCallback(
-    (dir: Direction): void => {
-      dispatch({ type: 'move', payload: { dir, visualLayout } });
-    },
-    [visualLayout],
-  );
+  const move = useCallback((dir: Direction): void => {
+    dispatch({ type: 'move', payload: { dir } });
+  }, []);
 
   const undo = useCallback((): void => {
     dispatch({ type: 'undo' });
