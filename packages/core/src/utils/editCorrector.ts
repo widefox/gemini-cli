@@ -219,7 +219,7 @@ export async function ensureCorrectEdit(
         // was modified more than a second after the last edit tool was run, we
         // can assume it was modified by something else.
         if (lastEditedByUsTime > 0) {
-          const stats = fs.statSync(filePath);
+          const stats = await fs.stat(filePath);
           const diff = stats.mtimeMs - lastEditedByUsTime;
           if (diff > 2000) {
             // Hard coded for 2 seconds
