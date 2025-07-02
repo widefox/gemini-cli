@@ -17,7 +17,7 @@ import {
   Config,
   logToolCall,
   ToolCallEvent,
-  ToolConfirmationPayload
+  ToolConfirmationPayload,
 } from '../index.js';
 import { Part, PartListUnion } from '@google/genai';
 import { getResponseTextFromParts } from '../utils/generateContentResponseUtilities.js';
