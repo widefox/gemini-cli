@@ -941,8 +941,11 @@ export function textBufferReducer(
     }
 
     case 'move_to_offset': {
-      const { text, offset } = action.payload;
-      const [newRow, newCol] = offsetToLogicalPos(text, offset);
+      const { offset } = action.payload;
+      const [newRow, newCol] = offsetToLogicalPos(
+        state.lines.join('\n'),
+        offset,
+      );
       return {
         ...state,
         cursorRow: newRow,
