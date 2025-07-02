@@ -11,9 +11,12 @@ import {
   Type,
 } from '@google/genai';
 import { GeminiClient } from '../core/client.js';
-import { EditToolParams } from '../tools/edit.js';
+import { EditToolParams, EditTool } from '../tools/edit.js';
+import { WriteFileTool } from '../tools/write-file.js';
 import { LruCache } from './LruCache.js';
 import { DEFAULT_GEMINI_FLASH_MODEL } from '../config/models.js';
+import { isFunctionResponse } from '../utils/messageInspectors.js';
+import * as fs from 'fs';
 
 const EditModel = DEFAULT_GEMINI_FLASH_MODEL;
 const EditConfig: GenerateContentConfig = {
@@ -50,6 +53,68 @@ export interface CorrectedEditResult {
 }
 
 /**
+ * Will look through the gemini client history and determine when the most recent
+ * edit to a target file occured. If no edit happened, it will return -1
+ * @param filePath the path to the file
+ * @param client the geminiClient, so that we can get the history
+ * @returns a DateTime (as a number) of when the last edit occured, or -1 if no edit was found.
+ */
+async function findLastEditTimestamp(
+  filePath: string,
+  client: GeminiClient,
+): Promise<number> {
+  const history = await client.getHistory();
+  if (!history) {
+    return -1;
+  }
+
+  // these tools
+  const editTools = [WriteFileTool.Name, EditTool.Name];
+  for (let i = history.length - 1; i >= 0; i--) {
+    const entry = history[i];
+
+    if (!isFunctionResponse(entry) || !entry.parts) continue;
+
+    // Let's extract the timestamp from the .id value, which is in format
+    // <tool.name>-<timestamp>-<uuid>
+    for (const part of entry.parts) {
+      if (
+        !part?.functionResponse?.name ||
+        !editTools.includes(part?.functionResponse?.name) ||
+        !part.functionResponse.response
+      )
+        continue;
+
+      // Check if the main setup is correct
+      if (
+        'error' in part.functionResponse.response ||
+        !('output' in part.functionResponse.response)
+      )
+        continue;
+
+      const outval = JSON.stringify(part.functionResponse.response['output']);
+
+      // check the string versions
+      if (!outval || outval.includes('Error') || outval.includes('Failed'))
+        continue;
+
+      if (!outval.includes(filePath)) continue;
+
+      if (part.functionResponse.id) {
+        const idParts = part.functionResponse.id.split('-');
+        if (idParts.length > 2) {
+          const timestamp = parseInt(idParts[1], 10);
+          if (!isNaN(timestamp)) {
+            return timestamp;
+          }
+        }
+      }
+    }
+  }
+  return -1;
+}
+
+/**
  * Attempts to correct edit parameters if the original old_string is not found.
  * It tries unescaping, and then LLM-based correction.
  * Results are cached to avoid redundant processing.
@@ -61,6 +126,7 @@ export interface CorrectedEditResult {
  *          EditToolParams (as CorrectedEditParams) and the final occurrences count.
  */
 export async function ensureCorrectEdit(
+  filePath: string,
   currentContent: string,
   originalParams: EditToolParams, // This is the EditToolParams from edit.ts, without \'corrected\'
   client: GeminiClient,
@@ -140,6 +206,36 @@ export async function ensureCorrectEdit(
         );
       }
     } else if (occurrences === 0) {
+      if (filePath) {
+        // In order to keep from clobbering edits made outside our system,
+        // let's check if there was a more recent edit to the file than what
+        // our system has done
+        const lastEditedByUsTime = await findLastEditTimestamp(
+          filePath,
+          client,
+        );
+
+        // Add a 1-second buffer to account for timing inaccuracies. If the file
+        // was modified more than a second after the last edit tool was run, we
+        // can assume it was modified by something else.
+        if (lastEditedByUsTime > 0) {
+          console.log('>> last gc edit time', lastEditedByUsTime);
+          const stats = fs.statSync(filePath);
+          const diff = stats.mtimeMs - lastEditedByUsTime;
+          console.log('>> diff since edit', diff);
+          if (diff > 2000) {
+            console.log('>>> returning 0 occurances');
+            // This file was edited sooner
+            const result: CorrectedEditResult = {
+              params: { ...originalParams },
+              occurrences: 0, // Explicitly 0 as LLM failed
+            };
+            editCorrectionCache.set(cacheKey, result);
+            return result;
+          }
+        }
+      }
+
       const llmCorrectedOldString = await correctOldStringMismatch(
         client,
         currentContent,
