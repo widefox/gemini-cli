@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { OAuth2Client, Credentials } from 'google-auth-library';
+import { OAuth2Client, Credentials, GoogleAuth } from 'google-auth-library';
 import * as http from 'http';
 import url from 'url';
 import crypto from 'crypto';
@@ -13,6 +13,7 @@ import open from 'open';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import * as os from 'os';
+import { getErrorMessage } from '../utils/errors.js';
 
 //  OAuth Client ID used to initiate OAuth2Client class.
 const OAUTH_CLIENT_ID =
@@ -58,6 +59,7 @@ export async function getOauthClient(): Promise<OAuth2Client> {
     clientId: OAUTH_CLIENT_ID,
     clientSecret: OAUTH_CLIENT_SECRET,
   });
+
   client.on('tokens', async (tokens: Credentials) => {
     await cacheCredentials(tokens);
   });
@@ -71,15 +73,49 @@ export async function getOauthClient(): Promise<OAuth2Client> {
         if (googleAccountId) {
           await cacheGoogleAccountId(googleAccountId);
         }
-      } catch (error) {
-        console.error(
-          'Failed to retrieve Google Account ID for existing credentials:',
-          error,
-        );
-        // Continue with existing auth flow
+      } catch {
+        // Non-fatal, continue with existing auth.
       }
     }
     return client;
+  }
+
+  // In Google Cloud Shell, we can use Application Default Credentials
+  // to authenticate non-interactively.
+  if (process.env.CLOUD_SHELL === 'true') {
+    try {
+      // If no cached credentials, use ADC.
+      console.log(
+        'Attempting to authenticate via Application Default Credentials.',
+      );
+      const auth = new GoogleAuth({
+        scopes: OAUTH_SCOPE,
+      });
+      const adcClient = (await auth.getClient()) as OAuth2Client;
+
+      // Manually trigger token caching
+      const token = await adcClient.getAccessToken();
+      if (token) {
+        await cacheCredentials(adcClient.credentials);
+      }
+
+      try {
+        const googleAccountId = await getGoogleAccountId(adcClient);
+        if (googleAccountId) {
+          await cacheGoogleAccountId(googleAccountId);
+        }
+      } catch (_error) {
+        // Non-fatal
+      }
+      console.log('Authentication successful.');
+      return adcClient;
+    } catch (e) {
+      throw new Error(
+        `Could not authenticate with Application Default Credentials. Please ensure you are in a properly configured environment. Error: ${getErrorMessage(
+          e,
+        )}`,
+      );
+    }
   }
 
   const webLogin = await authWithWeb(client);

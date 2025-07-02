@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getOauthClient, getCachedGoogleAccountId } from './oauth2.js';
-import { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client, GoogleAuth } from 'google-auth-library';
 import * as fs from 'fs';
 import * as path from 'path';
 import http from 'http';
@@ -41,6 +41,8 @@ describe('oauth2', () => {
   });
   afterEach(() => {
     fs.rmSync(tempHomeDir, { recursive: true, force: true });
+    vi.clearAllMocks();
+    delete process.env.CLOUD_SHELL;
   });
 
   it('should perform a web login', async () => {
@@ -149,5 +151,114 @@ describe('oauth2', () => {
 
     // Verify the getCachedGoogleAccountId function works
     expect(getCachedGoogleAccountId()).toBe('test-google-account-id-123');
+  });
+
+  describe('in Cloud Shell', () => {
+    const mockGetClient = vi.fn();
+    const mockGetAccessToken = vi.fn();
+
+    beforeEach(() => {
+      process.env.CLOUD_SHELL = 'true';
+      vi.spyOn(os, 'homedir').mockReturnValue('/user/home');
+      vi.spyOn(fs.promises, 'mkdir').mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, 'writeFile').mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, 'readFile').mockRejectedValue(
+        new Error('File not found'),
+      ); // Default to no cached creds
+
+      const mockClient = {
+        credentials: { refresh_token: 'test-refresh-token' },
+        getAccessToken: mockGetAccessToken,
+      };
+
+      mockGetClient.mockResolvedValue(mockClient);
+      vi.mocked(GoogleAuth).mockImplementation(
+        () =>
+          ({
+            getClient: mockGetClient,
+          }) as unknown as GoogleAuth,
+      );
+      mockGetAccessToken.mockResolvedValue({ token: 'test-access-token' });
+    });
+
+    it('should attempt to load cached credentials first', async () => {
+      const cachedCreds = { refresh_token: 'cached-token' };
+      vi.spyOn(fs.promises, 'readFile').mockResolvedValue(
+        JSON.stringify(cachedCreds),
+      );
+
+      const mockClient = {
+        setCredentials: vi.fn(),
+        getAccessToken: vi.fn().mockResolvedValue({ token: 'test-token' }),
+        getTokenInfo: vi.fn().mockResolvedValue({}),
+        on: vi.fn(),
+      };
+
+      // To mock the new OAuth2Client() inside the function
+      vi.mocked(OAuth2Client).mockImplementation(
+        () => mockClient as unknown as OAuth2Client,
+      );
+
+      await getOauthClient();
+
+      expect(fs.promises.readFile).toHaveBeenCalledWith(
+        '/user/home/.gemini/oauth_creds.json',
+        'utf-8',
+      );
+      expect(mockClient.setCredentials).toHaveBeenCalledWith(cachedCreds);
+      expect(mockClient.getAccessToken).toHaveBeenCalled();
+      expect(mockClient.getTokenInfo).toHaveBeenCalled();
+      expect(mockGetClient).not.toHaveBeenCalled(); // Should not fetch new client if cache is valid
+    });
+
+    it('should use GoogleAuth to get a client if no cached credentials exist', async () => {
+      await getOauthClient();
+
+      expect(GoogleAuth).toHaveBeenCalledWith({
+        scopes: [
+          'https://www.googleapis.com/auth/cloud-platform',
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+        ],
+      });
+      expect(mockGetClient).toHaveBeenCalled();
+    });
+
+    it('should cache the credentials after fetching them via ADC', async () => {
+      const newCredentials = { refresh_token: 'new-adc-token' };
+      const mockClient = {
+        credentials: newCredentials,
+        getAccessToken: mockGetAccessToken,
+      };
+      mockGetClient.mockResolvedValue(mockClient);
+
+      await getOauthClient();
+
+      expect(fs.promises.writeFile).toHaveBeenCalledWith(
+        '/user/home/.gemini/oauth_creds.json',
+        JSON.stringify(newCredentials, null, 2),
+      );
+    });
+
+    it('should return the OAuth2Client on successful ADC authentication', async () => {
+      const mockClient = {
+        credentials: { refresh_token: 'test-refresh-token' },
+        getAccessToken: mockGetAccessToken,
+      };
+      mockGetClient.mockResolvedValue(mockClient);
+
+      const client = await getOauthClient();
+
+      expect(client).toBe(mockClient);
+    });
+
+    it('should throw an error if ADC fails', async () => {
+      const testError = new Error('ADC Failed');
+      mockGetClient.mockRejectedValue(testError);
+
+      await expect(getOauthClient()).rejects.toThrow(
+        'Could not authenticate with Application Default Credentials. Please ensure you are in a properly configured environment. Error: ADC Failed',
+      );
+    });
   });
 });
