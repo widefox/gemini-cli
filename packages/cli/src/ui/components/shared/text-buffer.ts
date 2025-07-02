@@ -431,7 +431,7 @@ type TextBufferAction =
         text: string;
       };
     }
-  | { type: 'move_to_offset'; payload: { text: string; offset: number } }
+  | { type: 'move_to_offset'; payload: { offset: number } }
   | { type: 'create_undo_snapshot' }
   | { type: 'set_viewport_width'; payload: number };
 
@@ -1255,9 +1255,9 @@ export function useTextBuffer({
 
   const moveToOffset = useCallback(
     (offset: number): void => {
-      dispatch({ type: 'move_to_offset', payload: { text, offset } });
+      dispatch({ type: 'move_to_offset', payload: { offset } });
     },
-    [text],
+    [],
   );
 
   const returnValue: TextBuffer = {
